@@ -1,72 +1,66 @@
-# utils/finder.py
-from Bio.Seq import Seq
-
-# Constants for PAM recognition; extendable for other Cas systems
-PAMS = {
-    "Cas9": "NGG",
-    # Add other PAM types here if needed, e.g. Cas12a ("TTTV"), etc.
-}
-
-def is_valid_pam(pam_seq, pam="NGG"):
+def is_valid_pam(pam_seq, pam_pattern):
     """
-    Checks if the PAM sequence matches the PAM pattern (N = any base).
-    Currently supports Cas9 NGG PAM.
+    Check if PAM sequence matches PAM pattern (e.g., NGG, TTTV).
+    N = any base, V = A/C/G, T = T, etc.
     """
-    if pam == "NGG":
-        return len(pam_seq) == 3 and pam_seq[1:] == "GG" and pam_seq[0] in "ACGT"
-    # Add other PAM patterns here
-    return False
+    if len(pam_seq) != len(pam_pattern):
+        return False
 
-def calculate_gc_content(seq):
-    gc = seq.count("G") + seq.count("C")
-    return 100 * gc / len(seq) if len(seq) > 0 else 0
+    pam_map = {
+        "N": "ACGT",
+        "V": "ACG",
+        "T": "T",
+        "G": "G",
+        "A": "A",
+        "C": "C",
+    }
 
-def find_targets_in_seq(seq, pam="NGG", grna_length=20):
+    for base, pattern_char in zip(pam_seq, pam_pattern):
+        if base not in pam_map.get(pattern_char, ""):
+            return False
+    return True
+
+def find_targets(seq, pam="NGG", grna_length=20):
     """
-    Find valid CRISPR targets (gRNA + PAM) on a single DNA strand.
-    Returns list of dicts with position, gRNA, PAM, and strand.
+    Find CRISPR targets on the forward strand.
+    Returns list of dicts with Start, End, Strand, gRNA, PAM.
     """
+    seq = seq.upper()
     targets = []
-    window_size = grna_length + len(pam)
 
-    for i in range(len(seq) - window_size + 1):
-        candidate = seq[i:i + window_size]
-        gRNA = candidate[:grna_length]
+    total_len = grna_length + len(pam)
+
+    for i in range(len(seq) - total_len + 1):
+        candidate = seq[i:i+total_len]
+        grna = candidate[:grna_length]
         pam_seq = candidate[grna_length:]
         if is_valid_pam(pam_seq, pam):
             targets.append({
                 "Start": i,
-                "End": i + window_size,
-                "gRNA": gRNA,
+                "End": i + grna_length - 1,
+                "Strand": "+",
+                "gRNA": grna,
                 "PAM": pam_seq,
-                "Strand": "+"
             })
     return targets
 
 def find_targets_both_strands(seq, pam="NGG", grna_length=20):
     """
-    Finds targets on both strands.
+    Find CRISPR targets on both strands.
+    Adjust reverse strand coordinates to original sequence.
     """
-    targets = []
+    from Bio.Seq import Seq
 
-    # Forward strand
-    fwd_targets = find_targets_in_seq(seq, pam, grna_length)
-    targets.extend(fwd_targets)
-
-    # Reverse strand
+    fwd_targets = find_targets(seq, pam=pam, grna_length=grna_length)
     rev_seq = str(Seq(seq).reverse_complement())
-    rev_targets = find_targets_in_seq(rev_seq, pam, grna_length)
-    seq_len = len(seq)
-    # Adjust positions to original sequence coordinates
-    for t in rev_targets:
-        start = seq_len - t["End"]
-        end = seq_len - t["Start"]
-        targets.append({
-            "Start": start,
-            "End": end,
-            "gRNA": t["gRNA"],
-            "PAM": t["PAM"],
-            "Strand": "-"
-        })
+    rev_targets = find_targets(rev_seq, pam=pam, grna_length=grna_length)
 
-    return targets
+    seq_len = len(seq)
+    for t in rev_targets:
+        start = seq_len - t["End"] - 1
+        end = seq_len - t["Start"] - 1
+        t["Start"], t["End"] = start, end
+        t["Strand"] = "-"
+        # gRNA on reverse strand is reverse complement of found sequence
+        t["gRNA"] = str(Seq(t["gRNA"]).reverse_complement())
+    return fwd_targets + rev_targets
