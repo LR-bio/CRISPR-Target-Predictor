@@ -1,0 +1,11 @@
+crispr_predictor/
+├── crispr_main.py         # Main CLI or Streamlit app
+├── utils/
+│   ├── parser.py          # FASTA/GenBank loaders
+│   ├── scoring.py         # MIT/CFD scoring models
+│   ├── finder.py          # PAM, gRNA detection
+│   ├── offtargets.py      # Hamming + genome scan
+│   ├── ml_model.py        # AI/ML scoring
+├── reports/
+│   ├── output.csv
+│   └── output.json
