@@ -1,26 +1,40 @@
-# utils/scoring.py
-import pandas as pd
-
 def calculate_gc_content(seq):
-    gc = seq.count("G") + seq.count("C")
-    return 100 * gc / len(seq) if len(seq) > 0 else 0
+    """
+    Calculate GC content percentage of sequence.
+    """
+    seq = seq.upper()
+    gc_count = seq.count("G") + seq.count("C")
+    if len(seq) == 0:
+        return 0
+    return round(100 * gc_count / len(seq), 2)
 
 def rank_targets(df):
     """
-    Rank targets based on:
-    - Number of off-target hits (fewer is better)
-    - Predicted efficiency (higher is better, if available)
-    Returns DataFrame sorted by rank_score.
+    Rank targets based on composite score from GC content, off-target hits, and predicted efficacy.
+    Lower off-target hits and GC between 40-60% favored.
     """
-    # If no predicted efficacy, fill with 0
-    if "PredictedEfficacy" not in df.columns:
-        df["PredictedEfficacy"] = 0
+    import numpy as np
 
-    # Normalize off-target hits and efficacy for ranking
-    df["OffTargetHitsNorm"] = (df["OffTargetHits"] - df["OffTargetHits"].min()) / (df["OffTargetHits"].max() - df["OffTargetHits"].min() + 1e-6)
-    df["PredictedEfficacyNorm"] = (df["PredictedEfficacy"] - df["PredictedEfficacy"].min()) / (df["PredictedEfficacy"].max() - df["PredictedEfficacy"].min() + 1e-6)
+    # Normalize columns
+    df = df.copy()
+    max_off = df["OffTargetHits"].max() if df["OffTargetHits"].max() > 0 else 1
+    df["OffTargetScore"] = 1 - (df["OffTargetHits"] / max_off)  # higher better
 
-    # Composite rank score: lower off-target and higher efficacy preferred
-    df["RankScore"] = df["PredictedEfficacyNorm"] - df["OffTargetHitsNorm"]
+    # Ideal GC range 40-60%
+    df["GCScore"] = df["GC%"].apply(lambda x: 1 - abs(50 - x) / 50)  # max 1 at 50%
 
-    return df.sort_values(by="RankScore", ascending=False).reset_index(drop=True)
+    # Normalize predicted efficacy between 0-1 if exists
+    if "PredictedEfficacy" in df.columns and df["PredictedEfficacy"].notnull().all():
+        max_eff = df["PredictedEfficacy"].max()
+        min_eff = df["PredictedEfficacy"].min()
+        if max_eff > min_eff:
+            df["EffScore"] = (df["PredictedEfficacy"] - min_eff) / (max_eff - min_eff)
+        else:
+            df["EffScore"] = 0.5
+    else:
+        df["EffScore"] = 0.5
+
+    # Composite rank score weighted sum
+    df["RankScore"] = (0.4 * df["EffScore"]) + (0.3 * df["OffTargetScore"]) + (0.3 * df["GCScore"])
+    df = df.sort_values(by="RankScore", ascending=False)
+    return df
