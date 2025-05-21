@@ -1,22 +1,19 @@
-# utils/ml_model.py
-
 def predict_efficiency(gRNA):
     """
-    Placeholder function for gRNA efficiency prediction.
-    Returns a score between 0 and 1.
-    Uses simple heuristics on GC content and nucleotide position preferences.
-    Replace this stub with a real ML model as needed.
+    Placeholder ML model for predicting CRISPR gRNA cutting efficiency.
+    Here we use a simple heuristic:
+    - Penalize extreme GC content
+    - Penalize homopolymers >4
+    - Reward balanced GC around 50%
+    Returns score 0 to 1.
     """
-    gRNA = gRNA.upper()
+    seq = gRNA.upper()
+    gc_content = (seq.count("G") + seq.count("C")) / len(seq)
+    gc_score = 1 - abs(0.5 - gc_content) * 2  # max 1 at 0.5 GC
 
-    # GC content contribution (ideal between 40-60%)
-    gc = (gRNA.count("G") + gRNA.count("C")) / len(gRNA)
-    gc_score = 1 - abs(gc - 0.5) * 2  # peaks at 0.5, decreases to 0 at extremes
+    # Check homopolymers
+    max_homopolymer = max(len(s) for s in ''.join(c if c == seq[i] else ' ' for i, c in enumerate(seq)).split())
+    homopolymer_penalty = 0 if max_homopolymer <= 4 else (max_homopolymer - 4) * 0.1
 
-    # Positional nucleotide preferences (made-up weights)
-    weights = [0.1 if nt in "GC" else 0.05 for nt in gRNA]
-
-    position_score = sum(weights) / len(gRNA)
-
-    score = (gc_score + position_score) / 2
-    return max(0, min(1, score))  # Clamp between 0 and 1
+    score = gc_score - homopolymer_penalty
+    return max(0, min(1, score))
